@@ -151,7 +151,7 @@ initial parameters, with simlar syntax to `let`."
           "dbs-and-specs must not be empty.")
   (assert (even? (length dbs-and-specs))
           "dbs-and-specs must be of even length")
-  (if (= 2 dbs-and-specs)
+  (if (= 2 (length dbs-and-specs))
     `(with-db ~(vec dbs-and-specs) ~@body)
     `(with-db ~(vec (take 2 dbs-and-specs))
        (with-dbs ~(drop 2 dbs-and-specs)
@@ -166,5 +166,6 @@ initial parameters, with simlar syntax to `let`."
   "Takes some Clojure and writes some EDN, safely."
   [elt]
   (let [cand (pr-str elt)]
-    (assert (= elt (edn/read-string cand)))
+    (assert (= elt (edn/read-string cand))
+            "must be expressable as EDN")
     cand))
