@@ -206,34 +206,6 @@ Returns `true` on success, `false` on an error."
   (add-bin! db (.getBytes key)
             (bytes (.getBytes (edn-str value)))))
 
-(defn add-bulk-bin!
-  "Adds a collection of key-data binary pairs to the DB, all at once. 
-It behaves similarly to add-bin, where if a key already exists in the DB, 
-then nothing is done to that record.
-
-Returns `true` on success, `false` on an error."
-  [db kv-pairs]
-  (let [to-add (reduce #(apply conj %1 %2) [] kv-pairs) 
-        height (count to-add)
-        width (reduce #(max %1 %2) (map #(.length %) to-add))
-        ^ByteArray array-maker (ByteArray. height width)]
-    (doseq [^bytes elem to-add]
-      (.push array-maker elem))
-    (.add_bulk db (.drop array-maker))))
-
-(defn add-bulk-edn!
-  "Adds a mapping of string keys to Clojure data values to the DB all
-at once.  It uses `add-bulk-bin!` to do the heavy lifting (which there
-is some).
-
-Returns `true` on success, `false` on an error."
-  [db data]
-  (let [to-add (map (fn [[k v]] 
-                      [(.getBytes k) 
-                       (.getBytes (edn-str v))])
-                    data)]
-    (add-bulk-bin! db to-add)))
-
 (defn get-bin
   "Gets binary data from an open DB using a binary key.
 
@@ -246,6 +218,6 @@ Returns a byte array on success, 'nil' if it errors."
 
 Returns Clojure on success, 'nil' if it errors."
   [^DB db ^String key]
-  (if-let [^bytes result (get-bin! db (.getBytes key))]
+  (if-let [^bytes result (get-bin db (.getBytes key))]
     (-> (String. result)
         edn/read-string)))
