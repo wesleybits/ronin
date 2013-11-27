@@ -157,7 +157,8 @@ An example would be merging hashes of people and animals together to see
 who owns which pet, assuming that Ronin is being used to drive a graph 
 database:
 
-    (with-dbs [merged {:type :cache-hash :modes [:create :write :read]}
+    (with-dbs [merged {:type :cache-hash 
+                       :modes [:create :write :read]}
                people (assoc people-spec :modes [:read])
                animals (assoc animal-spec :modes [:read])]
       (merge-dbs! :add merged people animals)
@@ -189,7 +190,7 @@ database:
 
 (defn add-bin! 
   "Adds a binary key and value to an open DB.  If the key exists, then
-there is no change to the DB.  
+there is no change to the DB.
 
 Returns `true` if it succeeds, `false` on an error."
   [^DB db ^bytes key ^bytes value]
@@ -204,6 +205,34 @@ Returns `true` on success, `false` on an error."
   [^DB db ^String key value]
   (add-bin! db (.getBytes key)
             (bytes (.getBytes (edn-str value)))))
+
+(defn add-bulk-bin!
+  "Adds a collection of key-data binary pairs to the DB, all at once. 
+It behaves similarly to add-bin, where if a key already exists in the DB, 
+then nothing is done to that record.
+
+Returns `true` on success, `false` on an error."
+  [db kv-pairs]
+  (let [to-add (reduce #(apply conj %1 %2) [] kv-pairs) 
+        height (count to-add)
+        width (reduce #(max %1 %2) (map #(.length %) to-add))
+        ^ByteArray array-maker (ByteArray. height width)]
+    (doseq [^bytes elem to-add]
+      (.push array-maker elem))
+    (.add_bulk db (.drop array-maker))))
+
+(defn add-bulk-edn!
+  "Adds a mapping of string keys to Clojure data values to the DB all
+at once.  It uses `add-bulk-bin!` to do the heavy lifting (which there
+is some).
+
+Returns `true` on success, `false` on an error."
+  [db data]
+  (let [to-add (map (fn [[k v]] 
+                      [(.getBytes k) 
+                       (.getBytes (edn-str v))])
+                    data)]
+    (add-bulk-bin! db to-add)))
 
 (defn get-bin
   "Gets binary data from an open DB using a binary key.

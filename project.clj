@@ -1,4 +1,4 @@
-(defproject ronin "0.1.0-SNAPSHOT"
+(defproject ronin "0.1.0a"
   :description "Idiomatic wrapper for Kyoto Cabinet"
   :url "https://github.com/wesleybits/ronin"
   :license {:name "Eclipse Public License"
