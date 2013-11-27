@@ -3033,7 +3033,7 @@ net.brehaut.ClojureTools = (function (SH) {
 
 <h3>Or: Ignoble Mercinaries With Scary Military Training</h3>
 
-<h4>Or: Eastern Equivalent Of Knights Errant</h4>
+<h4>Or: Eastern Knights Errant</h4>
 
 <h5>Or: Sane-er Access To A Kyoto Cabinet</h5>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Kyoto Cabinet is a pretty boss thing.  It's fast, light-weight,
@@ -3056,6 +3056,7 @@ can be daunting for new-commers.</p>
   (:use ronin.specs)
   (:require [clojure.edn :as edn])
   (:import [kyotocabinet DB Visitor FileProcessor]
+           [ronin.helper ByteArray]
            [java.util List ArrayList Map]))</pre></td></tr><tr><td class="docs"><p>Tests for an array of bytes.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- byte-array?
   [elt]
@@ -3079,7 +3080,8 @@ the <code>DB.error()</code> method to see what went wrong.</p>
 <li><code>:filename</code>: Sometimes required.  If you're using an in-memory DB,
 then this parameter is ignored.</li>
 <li><code>:tuning</code>: Optional map of string parameters and their values, as
-specified in <a href="http://fallabs.com/kyotocabinet/javadoc/kyotocabinet/DB.html">Kyoto Cabinet's DB docs</a>.  This option isn't cooked, much unlike all the other ones.</li>
+specified in <a href="http://fallabs.com/kyotocabinet/javadoc/kyotocabinet/DB.html">Kyoto Cabinet's DB docs</a>. <br />
+This option isn't cooked, much unlike all the other ones.</li>
 </ul>
 
 <p>.. and a vector of access modes, which should be keys in <code>ronin.specs.open-options</code>.</p>
@@ -3100,38 +3102,42 @@ error logging to a file and compresses the resulting hash file when done:</p>
 
 <p>When finished, be sure to <code>.close</code> it.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn open-db!
-  [db specs modes]
+  [^DB db specs modes]
   (let [needs-filename #{:file-hash
                          :file-tree
                          :directory-hash
                          :directory-tree
                          :plain-text}
-        db-type (do (assert (keyword? (:type specs))
-                            &quot;:type needs to be a keyword&quot;)
+        db-type (do ;(println &quot;checking DB type&quot;)
                     (assert (not (nil? (get db-specs (:type specs))))
                             &quot;:type needs to be found in db-specs&quot;)
                     (:type specs))
-        db-file (if (some needs-filename db-type)
-                  (do (assert (string? (:filename specs))
-                              &quot;:filename needs to be a string&quot;)
-                      (assert (not= &quot;&quot; (:filename specs))
-                              &quot;:filename cannot be an empty string&quot;)
-                      (str (:filename specs) (get db-specs db-type)))
-                  (get db-specs db-type))
-        tuned-db-file (if (map? (:tuning specs))
-                        (-&gt; (:tuning specs)
-                            (map (fn [[k v]] (str k &quot;=&quot; v)))
-                            (reduce #(str %1 &quot;#&quot; %2))
-                            (str db-file &quot;#&quot;))
-                        db-file)
-        db-modes (do (assert (vector? modes)
-                             &quot;:modes must be a vector&quot;)
-                     (assert (-&gt; (map #(get open-options %) modes)
-                                 (map number?)
-                                 (reduce #(and %1 %2)))
+        db-file (do ;(println &quot;checking db file&quot;)
+                    (if (some needs-filename [(:type specs)])
+                      (do (assert (string? (:filename specs))
+                                  &quot;:filename needs to be a string&quot;)
+                          (assert (not= &quot;&quot; (:filename specs))
+                                  &quot;:filename cannot be an empty string&quot;)
+                          (str (:filename specs) (get db-specs db-type)))
+                      (get db-specs db-type)))
+        tuned-db-file (do; (println &quot;checking tuning&quot;)
+                          (if (and (map? (:tuning specs))
+                                   (not (empty? (:tuning specs))))
+                            (-&gt;&gt; (:tuning specs)
+                                 (map (fn [[k v]] (str k &quot;=&quot; v)))
+                                 (reduce #(str %1 &quot;#&quot; %2))
+                                 (str db-file &quot;#&quot;))
+                            db-file))
+        db-modes (do ;(println &quot;checking modes&quot;)
+                     (assert (vector? modes)
+                             &quot;modes must be a vector&quot;)
+                     (assert (-&gt;&gt; (map #(get open-options %) modes)
+                                  (map number?)
+                                  (reduce #(and %1 %2)))
                              &quot;every specified mode must be in `open-options`&quot;)
-                     (-&gt; (map #(get open-options %) modes)
-                         (apply bit-or 0)))]
+                     (-&gt;&gt; (map #(get open-options %) modes)
+                          (apply bit-or 0)))]
+    ;(println &quot;done checking stuff&quot;)
     (.open db tuned-db-file db-modes)
     db))</pre></td></tr><tr><td class="docs"><h1>Very Modestly Managed DB access.</h1>
 
@@ -3167,13 +3173,25 @@ in.  This is required.</li>
 
 <p>Much like <code>with-db</code>, but takes multiple DB and open-spec maps for it's
 initial parameters, with simlar syntax to <code>let</code>.</p>
+
+<p>An example would be merging hashes of people and animals together to see
+who owns which pet, assuming that Ronin is being used to drive a graph 
+database:</p>
+
+<pre><code>(with-dbs [merged {:type :cache-hash :modes [:create :write :read]}
+           people (assoc people-spec :modes [:read])
+           animals (assoc animal-spec :modes [:read])]
+  (merge-dbs! :add merged people animals)
+  ;; ... perform your walk here ...
+  )
+</code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defmacro with-dbs
   [dbs-and-specs &amp; body]
   (assert (not (empty? dbs-and-specs))
           &quot;dbs-and-specs must not be empty.&quot;)
-  (assert (even? (length dbs-and-specs))
+  (assert (even? (count dbs-and-specs))
           &quot;dbs-and-specs must be of even length&quot;)
-  (if (= 2 dbs-and-specs)
+  (if (= 2 (count dbs-and-specs))
     `(with-db ~(vec dbs-and-specs) ~@body)
     `(with-db ~(vec (take 2 dbs-and-specs))
        (with-dbs ~(drop 2 dbs-and-specs)
@@ -3185,8 +3203,35 @@ needs to be stored instead.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- edn-str
   [elt]
   (let [cand (pr-str elt)]
-    (assert (= elt (edn/read-string cand)))
-    cand))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#ronin.specs" name="ronin.specs"><h1 class="project-name">ronin.specs</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>Specification maps used by much of Ronin.</p>
+    (assert (= elt (edn/read-string cand))
+            &quot;must be expressable as EDN&quot;)
+    cand))</pre></td></tr><tr><td class="docs"><p>Adds a binary key and value to an open DB.  If the key exists, then
+there is no change to the DB.  </p>
+
+<p>Returns <code>true</code> if it succeeds, <code>false</code> on an error.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn add-bin! 
+  [^DB db ^bytes key ^bytes value]
+  (.add db key value))</pre></td></tr><tr><td class="docs"><p>Adds a string key and a Clojure data structure to an open DB.  It
+uses <code>add-bin!</code> to do the heavy-lifting (which there isn't any).  If 
+the key already exists in the database, then there is no change.</p>
+
+<p>Returns <code>true</code> on success, <code>false</code> on an error.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn add-edn!
+  [^DB db ^String key value]
+  (add-bin! db (.getBytes key)
+            (bytes (.getBytes (edn-str value)))))</pre></td></tr><tr><td class="docs"><p>Gets binary data from an open DB using a binary key.</p>
+
+<p>Returns a byte array on success, 'nil' if it errors.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn get-bin!
+  [^DB db ^bytes key]
+  (.get db key))</pre></td></tr><tr><td class="docs"><p>Gets parsed Clojure data from an open DB using a string key.</p>
+
+<p>Returns Clojure on success, 'nil' if it errors.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn get-edn!
+  [^DB db ^String key]
+  (if-let [^bytes result (get-bin! db (.getBytes key))]
+    (-&gt; (String. result)
+        edn/read-string)))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#ronin.specs" name="ronin.specs"><h1 class="project-name">ronin.specs</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><p>Specification maps used by much of Ronin.</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns ronin.specs
   (:import [kyotocabinet DB]))</pre></td></tr><tr><td class="docs"><p>A lookup table for Kyoto Cabinet's DB:open options.</p>
@@ -3195,12 +3240,13 @@ needs to be stored instead.</p>
 <li><code>:sync</code>: auto synchronization, saves changes to the DB file.</li>
 <li><code>:transaction</code>: auto transaction, won't synchronize if there's a problem.</li>
 <li><code>:create</code>: create a casket (DB file), if it doesn't exist.</li>
-<li><code>:no-lock</code>: non-locking reads and writes, use with extreme care!</li>
+<li><code>:no-lock</code>: non-locking reads and writes. Use with extreme care, especially since
+this is Clojure!</li>
 <li><code>:no-repair</code>: don't fix the DB if something goes wrong, use with care!</li>
 <li><code>:read</code>: read mode</li>
 <li><code>:write</code>: write mode</li>
 <li><code>:try-lock</code>: locking reads and writes. Safe but slow.</li>
-<li><code>:truncate</code>: open with data truncation. Improves speed, but screws with your data.</li>
+<li><code>:truncate</code>: open with data truncation.</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(def 
   open-options
