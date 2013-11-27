@@ -81,12 +81,12 @@ When finished, be sure to `.close` it."
                          :directory-tree
                          :plain-text}
 
-        db-type (do (println "checking DB type")
-                  (assert (not (nil? (get db-specs (:type specs))))
+        db-type (do ;(println "checking DB type")
+                    (assert (not (nil? (get db-specs (:type specs))))
                             ":type needs to be found in db-specs")
                     (:type specs))
 
-        db-file (do (println "checking db file")
+        db-file (do ;(println "checking db file")
                     (if (some needs-filename [(:type specs)])
                       (do (assert (string? (:filename specs))
                                   ":filename needs to be a string")
@@ -95,7 +95,7 @@ When finished, be sure to `.close` it."
                           (str (:filename specs) (get db-specs db-type)))
                       (get db-specs db-type)))
 
-        tuned-db-file (do (println "checking tuning")
+        tuned-db-file (do; (println "checking tuning")
                           (if (and (map? (:tuning specs))
                                    (not (empty? (:tuning specs))))
                             (->> (:tuning specs)
@@ -104,7 +104,7 @@ When finished, be sure to `.close` it."
                                  (str db-file "#"))
                             db-file))
         
-        db-modes (do (println "checking modes")
+        db-modes (do ;(println "checking modes")
                      (assert (vector? modes)
                              "modes must be a vector")
                      (assert (->> (map #(get open-options %) modes)
@@ -114,7 +114,7 @@ When finished, be sure to `.close` it."
                      (->> (map #(get open-options %) modes)
                           (apply bit-or 0)))]
 
-    (println "done checking stuff")
+    ;(println "done checking stuff")
     (.open db tuned-db-file db-modes)
     db))
 
@@ -205,14 +205,14 @@ Returns `true` on success, `false` on an error."
   (add-bin! db (.getBytes key)
             (bytes (.getBytes (edn-str value)))))
 
-(defn get-bin!
+(defn get-bin
   "Gets binary data from an open DB using a binary key.
 
 Returns a byte array on success, 'nil' if it errors."
   [^DB db ^bytes key]
   (.get db key))
 
-(defn get-edn!
+(defn get-edn
   "Gets parsed Clojure data from an open DB using a string key.
 
 Returns Clojure on success, 'nil' if it errors."
