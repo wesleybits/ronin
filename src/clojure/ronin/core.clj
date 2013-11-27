@@ -74,44 +74,47 @@ error logging to a file and compresses the resulting hash file when done:
       [:create :write])
 
 When finished, be sure to `.close` it."
-  [db specs modes]
+  [^DB db specs modes]
   (let [needs-filename #{:file-hash
                          :file-tree
                          :directory-hash
                          :directory-tree
                          :plain-text}
 
-        db-type (do (assert (keyword? (:type specs))
-                            ":type needs to be a keyword")
-                    (assert (not (nil? (get db-specs (:type specs))))
+        db-type (do (println "checking DB type")
+                  (assert (not (nil? (get db-specs (:type specs))))
                             ":type needs to be found in db-specs")
                     (:type specs))
 
-        db-file (if (some needs-filename db-type)
-                  (do (assert (string? (:filename specs))
-                              ":filename needs to be a string")
-                      (assert (not= "" (:filename specs))
-                              ":filename cannot be an empty string")
-                      (str (:filename specs) (get db-specs db-type)))
-                  (get db-specs db-type))
+        db-file (do (println "checking db file")
+                    (if (some needs-filename [(:type specs)])
+                      (do (assert (string? (:filename specs))
+                                  ":filename needs to be a string")
+                          (assert (not= "" (:filename specs))
+                                  ":filename cannot be an empty string")
+                          (str (:filename specs) (get db-specs db-type)))
+                      (get db-specs db-type)))
 
-        tuned-db-file (if (and (map? (:tuning specs))
-                               (not (empty? (:tuning specs))))
-                        (-> (:tuning specs)
-                            (map (fn [[k v]] (str k "=" v)))
-                            (reduce #(str %1 "#" %2))
-                            (str db-file "#"))
-                        db-file)
+        tuned-db-file (do (println "checking tuning")
+                          (if (and (map? (:tuning specs))
+                                   (not (empty? (:tuning specs))))
+                            (->> (:tuning specs)
+                                 (map (fn [[k v]] (str k "=" v)))
+                                 (reduce #(str %1 "#" %2))
+                                 (str db-file "#"))
+                            db-file))
         
-        db-modes (do (assert (vector? modes)
-                             ":modes must be a vector")
-                     (assert (-> (map #(get open-options %) modes)
-                                 (map number?)
-                                 (reduce #(and %1 %2)))
+        db-modes (do (println "checking modes")
+                     (assert (vector? modes)
+                             "modes must be a vector")
+                     (assert (->> (map #(get open-options %) modes)
+                                  (map number?)
+                                  (reduce #(and %1 %2)))
                              "every specified mode must be in `open-options`")
-                     (-> (map #(get open-options %) modes)
-                         (apply bit-or 0)))]
+                     (->> (map #(get open-options %) modes)
+                          (apply bit-or 0)))]
 
+    (println "done checking stuff")
     (.open db tuned-db-file db-modes)
     db))
 
@@ -151,9 +154,10 @@ Much like `with-db`, but takes multiple DB and open-spec maps for it's
 initial parameters, with simlar syntax to `let`.
 
 An example would be merging hashes of people and animals together to see
-who owns which pet, assuming that Ronin is being used as a graph database:
+who owns which pet, assuming that Ronin is being used to drive a graph 
+database:
 
-    (with-dbs [merged {:type :cache-hash :modes [:create :write :read]
+    (with-dbs [merged {:type :cache-hash :modes [:create :write :read]}
                people (assoc people-spec :modes [:read])
                animals (assoc animal-spec :modes [:read])]
       (merge-dbs! :add merged people animals)
@@ -164,7 +168,7 @@ who owns which pet, assuming that Ronin is being used as a graph database:
           "dbs-and-specs must not be empty.")
   (assert (even? (count dbs-and-specs))
           "dbs-and-specs must be of even length")
-  (if (= 2 (length dbs-and-specs))
+  (if (= 2 (count dbs-and-specs))
     `(with-db ~(vec dbs-and-specs) ~@body)
     `(with-db ~(vec (take 2 dbs-and-specs))
        (with-dbs ~(drop 2 dbs-and-specs)
@@ -183,3 +187,36 @@ who owns which pet, assuming that Ronin is being used as a graph database:
             "must be expressable as EDN")
     cand))
 
+(defn add-bin! 
+  "Adds a binary key and value to an open DB.  If the key exists, then
+there is no change to the DB.  
+
+Returns `true` if it succeeds, `false` on an error."
+  [^DB db ^bytes key ^bytes value]
+  (.add db key value))
+
+(defn add-edn!
+  "Adds a string key and a Clojure data structure to an open DB.  It
+uses `add-bin!` to do the heavy-lifting (which there isn't any).  If 
+the key already exists in the database, then there is no change.
+
+Returns `true` on success, `false` on an error."
+  [^DB db ^String key value]
+  (add-bin! db (.getBytes key)
+            (bytes (.getBytes (edn-str value)))))
+
+(defn get-bin!
+  "Gets binary data from an open DB using a binary key.
+
+Returns a byte array on success, 'nil' if it errors."
+  [^DB db ^bytes key]
+  (.get db key))
+
+(defn get-edn!
+  "Gets parsed Clojure data from an open DB using a string key.
+
+Returns Clojure on success, 'nil' if it errors."
+  [^DB db ^String key]
+  (if-let [^bytes result (get-bin! db (.getBytes key))]
+    (-> (String. result)
+        edn/read-string)))
